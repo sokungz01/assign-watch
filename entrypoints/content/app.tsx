@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { Calendar, LayoutList } from "lucide-react";
+import { Calendar, Download, LayoutList } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { i18n } from "#i18n";
 import {
@@ -17,6 +17,7 @@ import { ClassSkeleton } from "@/components/class-skeleton";
 import { DateGroup } from "@/components/date-group";
 import { HiddenItemsManager } from "@/components/hidden-items-manager";
 import { NoAssignments } from "@/components/no-assignments";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,13 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { downloadICS, generateICS } from "@/lib/ics-generator";
 import {
   classInfoStorage,
   filtersStorage,
@@ -293,6 +301,48 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<"list" | "calendar">("list");
 
+  const handleExportToCalendar = () => {
+    const allFilteredAssignments: Activity[] = [];
+
+    assignments.data.forEach((query, index) => {
+      const classInfo = allClassInfo[index];
+
+      if (hiddenClasses.includes(classInfo.id)) {
+        return;
+      }
+
+      if (!query || query.length === 0) {
+        return;
+      }
+
+      const submittedAssignments = query.filter((assignment) => {
+        const status = getSubmissionStatus(assignment);
+        return status === "submitted" || status === "submitted_late";
+      });
+
+      const exceededAssignments = query.filter(
+        (assignment) => assignment.due_date_exceed
+      );
+
+      const filteredAssignments = query
+        .filter(
+          (assignment) =>
+            !(
+              exceededAssignments.includes(assignment) &&
+              submittedAssignments.includes(assignment)
+            )
+        )
+        .filter((assignment) => !hiddenAssignments.includes(assignment.id))
+        .filter(applyFilters);
+
+      allFilteredAssignments.push(...filteredAssignments);
+    });
+
+    const icsContent = generateICS(allFilteredAssignments, allClassInfo);
+    const timestamp = new Date().toISOString().split("T")[0];
+    downloadICS(icsContent, `assignments-${timestamp}.ics`);
+  };
+
   return (
     <div>
       <Dialog onOpenChange={setIsModalOpen} open={isModalOpen}>
@@ -314,6 +364,23 @@ function App() {
                 {activeTab === "list" ? i18n.t("todo") : i18n.t("calendar")}
               </DialogTitle>
               <div className="flex items-center gap-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={handleExportToCalendar}
+                        size="icon"
+                        variant="outline"
+                      >
+                        <Download className="size-4" />
+                        <span className="sr-only">Export to Calendar</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Export to Calendar</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <HiddenItemsManager
                   allAssignments={assignments.data}
                   allClassInfo={allClassInfo}
